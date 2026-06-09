@@ -53,6 +53,15 @@ def fit(polys, target_w=None, target_h=None, cx=0.0, cy=0.0):
     u = unary_union(polys); x0, y0, x1, y1 = u.bounds
     return [translate(p, cx-(x0+x1)/2, cy-(y0+y1)/2) for p in polys]
 
+def fit_box(polys, max_w, max_h, cx=0.0, cy=0.0):
+    """Scale to fit INSIDE a max_w x max_h box (whichever dim binds), then centre."""
+    polys = [p for p in polys if not p.is_empty]
+    u = unary_union(polys); x0, y0, x1, y1 = u.bounds
+    f = min(max_w/(x1-x0), max_h/(y1-y0))
+    polys = [sscale(p, f, f, origin=(0, 0)) for p in polys]
+    u = unary_union(polys); x0, y0, x1, y1 = u.bounds
+    return [translate(p, cx-(x0+x1)/2, cy-(y0+y1)/2) for p in polys]
+
 def hexp(h): h = h.lstrip("#"); return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 def rrect(w, h, r): return box(-w/2, -h/2, w/2, h/2).buffer(-r, join_style=1).buffer(r, join_style=1)
 def circle(R): return Point(0, 0).buffer(R, 128)
@@ -110,40 +119,52 @@ def load_logo_polys(path):
 
 # ---------- shape builders (logo mode) ----------
 def build_logo(style, LOGO, tagline, width):
-    def logo(w, cx=0, cy=0): return fit(LOGO, target_w=w, cx=cx, cy=cy)
+    """Each shape fits the logo INSIDE a safe box so it never runs past the edge/ring."""
+    def lb(mw, mh, cx=0, cy=0): return fit_box(LOGO, mw, mh, cx, cy)
     d = {"base": [], "logo": [], "accent": []}
     if style == "baseball":
-        R = width/2; d["base"] = [loop_top(circle(R), R)]
-        d["accent"] = [ring(R-2.5, R-6.5)] + (arched(tagline, R-9, 4.3) if tagline else [])
-        d["logo"] = logo(R*1.4, cy=4)
+        R = width/2; Ri = R-6.5                       # inside the ring
+        d["base"] = [loop_top(circle(R), R)]
+        d["accent"] = [ring(R-2.5, R-6.5)] + (arched(tagline, R-9.5, 4.0) if tagline else [])
+        d["logo"] = lb(2*Ri*0.80, Ri*0.92, cy=(Ri*0.16 if tagline else 0))
     elif style == "circle":
-        R = width/2; d["base"] = [loop_top(circle(R), R)]; d["logo"] = logo(R*1.5, cy=4 if tagline else 0)
-        if tagline: d["accent"] = [box(-R*0.55, -R*0.34, R*0.55, -R*0.28)] + text_polys(tagline, w=R*1.0, cy=-R*0.5)
+        R = width/2; d["base"] = [loop_top(circle(R), R)]
+        if tagline:
+            d["logo"] = lb(R*1.45, R*0.80, cy=R*0.24)
+            d["accent"] = [box(-R*0.5, -R*0.34, R*0.5, -R*0.30)] + text_polys(tagline, w=R*0.95, cy=-R*0.55)
+        else:
+            d["logo"] = lb(R*1.55, R*0.95)
     elif style == "tag":
-        w = width; h = width*0.44; d["base"] = [loop_top(rrect(w, h, 6), h/2)]
-        d["logo"] = logo(w*0.82, cy=5 if tagline else 0)
-        if tagline: d["accent"] = text_polys(tagline, w=w*0.5, cy=-h*0.32)
+        w = width; h = width*0.46; d["base"] = [loop_top(rrect(w, h, 6), h/2)]
+        if tagline:
+            d["logo"] = lb(w*0.80, h*0.50, cy=h*0.16); d["accent"] = text_polys(tagline, w=w*0.46, cy=-h*0.32)
+        else:
+            d["logo"] = lb(w*0.82, h*0.66)
     elif style == "dogtag":
         w = width*0.55; h = width
         base = rrect(w, h, 8).difference(Point(0, h/2-8).buffer(min(3.2, w*0.08), 64))
-        d["base"] = [base]; d["logo"] = logo(w*0.82, cy=h*0.1)
-        if tagline: d["accent"] = [tri(9, 0, h*0.32)] + text_polys(tagline, w=w*0.75, cy=-h*0.27)
+        d["base"] = [base]; d["logo"] = lb(w*0.80, h*0.26, cy=h*0.08)
+        if tagline: d["accent"] = [tri(8, 0, h*0.30)] + text_polys(tagline, w=w*0.72, cy=-h*0.27)
     elif style == "hexagon":
-        R = width/2; d["base"] = [loop_top(hexagon(R), R*0.86)]; d["accent"] = [hexagon(R-3).difference(hexagon(R-6))]; d["logo"] = logo(R*1.35)
+        R = width/2; inr = R-5
+        d["base"] = [loop_top(hexagon(R), R*0.86)]; d["accent"] = [hexagon(R-3).difference(hexagon(R-6))]
+        d["logo"] = lb(inr*1.28, inr*0.82)
     elif style == "shield":
         w = width; h = width*1.2; d["base"] = [loop_top(shield(w, h), h/2)]
-        d["accent"] = ([tri(12, 0, h*0.28)] if True else []) + (text_polys(tagline, w=w*0.6, cy=-h*0.31) if tagline else [])
-        d["logo"] = logo(w*0.8, cy=-1)
+        d["accent"] = [tri(11, 0, h*0.27)] + (text_polys(tagline, w=w*0.55, cy=-h*0.30) if tagline else [])
+        d["logo"] = lb(w*0.72, h*0.30, cy=-h*0.02)
     elif style == "diecut":
-        s = logo(width, cy=0); plate = unary_union(s).buffer(3.2, 1).buffer(-0.6)
+        s = fit(LOGO, target_w=width, cy=0); plate = unary_union(s).buffer(3.2, 1).buffer(-0.6)
         if isinstance(plate, MultiPolygon): plate = max(plate.geoms, key=lambda g: g.area)
         d["base"] = [loop_top(plate, plate.bounds[3], ro=5.5, rh=2.8)]; d["logo"] = s
     elif style == "triangle":
-        S = width; base = rtri(S); d["base"] = [loop_top(base, base.bounds[3])]; d["logo"] = logo(S*0.57, cy=2)
-        if tagline: d["accent"] = text_polys(tagline, w=S*0.43, cy=-S*0.2)
+        S = width; base = rtri(S); d["base"] = [loop_top(base, base.bounds[3])]
+        d["logo"] = lb(S*0.52, S*0.30, cy=S*0.05)
+        if tagline: d["accent"] = text_polys(tagline, w=S*0.40, cy=-S*0.20)
     elif style == "squircle":
-        w = width; base = rrect(w, w, w*0.28); d["base"] = [loop_top(base, w/2)]; d["logo"] = logo(w*0.82, cy=3)
-        d["accent"] = [Polygon([(w/2-16, w/2), (w/2, w/2), (w/2, w/2-16)]).intersection(base)] + (text_polys(tagline, w=w*0.6, cy=-w*0.27) if tagline else [])
+        w = width; base = rrect(w, w, w*0.28); d["base"] = [loop_top(base, w/2)]
+        d["logo"] = lb(w*0.78, w*0.42, cy=w*0.04)
+        d["accent"] = [Polygon([(w/2-15, w/2), (w/2, w/2), (w/2, w/2-15)]).intersection(base)] + (text_polys(tagline, w=w*0.55, cy=-w*0.27) if tagline else [])
     else:
         raise SystemExit(f"unknown style: {style}")
     return d
