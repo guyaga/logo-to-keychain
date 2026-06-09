@@ -256,7 +256,7 @@ def build_mascot(image, palette_hex, charm_h, pt, relief):
     labimg = -np.ones((H, W), np.int32); flat = labimg[fgb]
     for ci in range(len(ctr)): flat[kl.ravel() == ci] = snap[ci]
     labimg[fgb] = flat
-    pitch = charm_h/fgb.any(axis=1).sum(); min_px = int(3.0/(pitch*pitch))
+    pitch = charm_h/fgb.any(axis=1).sum(); min_px = int(6.0/(pitch*pitch))   # drop colour blobs < ~6 mm^2
     def drop_small(m):
         nc, ll, s2, _ = cv2.connectedComponentsWithStats(m); o = np.zeros_like(m)
         for c in range(1, nc):
@@ -267,7 +267,8 @@ def build_mascot(image, palette_hex, charm_h, pt, relief):
         m = (labimg == pi).astype(np.uint8)*255
         if m.sum() == 0: continue
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8)); m = drop_small(m)
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+        m = cv2.medianBlur(m, 5); m = drop_small(m)               # smooth ragged edges, kill specks
         pl = mask_to_polys(m, pitch)
         if pl: region[pi] = pl
     sil = mask_to_polys(fg, pitch)
