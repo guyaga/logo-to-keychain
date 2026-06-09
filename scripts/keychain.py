@@ -76,21 +76,32 @@ def loop_top(shape, topy, ro=6.0, rh=3.0):
     c = (0, topy + ro - 2.6)
     return shape.union(Point(c).buffer(ro, 80)).difference(Point(c).buffer(rh, 80))
 
-def font(px):
-    for f in ("consolab.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf"):
+HEAVY = ("ariblk.ttf", "Arial Black.ttf", "impact.ttf", "seguibl.ttf", "consolab.ttf", "arialbd.ttf")
+def font(px, files=("consolab.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf")):
+    for f in files:
         try: return ImageFont.truetype(f, px)
         except Exception:
             try: return ImageFont.truetype(os.path.join(r"C:\Windows\Fonts", f), px)
             except Exception: pass
     return ImageFont.load_default()
 
-def text_polys(txt, w=None, h=None, cx=0, cy=0):
-    f = font(240); l, t, r, b = ImageDraw.Draw(Image.new("L", (4, 4))).textbbox((0, 0), txt, font=f)
-    im = Image.new("L", (r-l+30, b-t+30), 0); ImageDraw.Draw(im).text((15-l, 15-t), txt, font=f, fill=255)
-    return fit(mask_to_polys(np.array(im)), target_w=w, target_h=h, cx=cx, cy=cy)
+def fatten_polys(polys, amt):
+    """Thicken strokes by ~amt mm on each side so small text survives FDM printing."""
+    if amt <= 0: return polys
+    out = []
+    for p in polys:
+        out += as_polys(p.buffer(amt, join_style=1, cap_style=1))
+    return as_polys(unary_union(out)) if out else out
 
-def arched(txt, radius, ch):
-    f = font(240); adv = ImageDraw.Draw(Image.new("L", (4, 4))).textlength("M", font=f)
+def text_polys(txt, w=None, h=None, cx=0, cy=0, fatten=0.35, heavy=True):
+    f = font(240, HEAVY if heavy else ("consolab.ttf", "arialbd.ttf"))
+    l, t, r, b = ImageDraw.Draw(Image.new("L", (4, 4))).textbbox((0, 0), txt, font=f)
+    im = Image.new("L", (r-l+30, b-t+30), 0); ImageDraw.Draw(im).text((15-l, 15-t), txt, font=f, fill=255)
+    polys = fit(mask_to_polys(np.array(im)), target_w=w, target_h=h, cx=cx, cy=cy)
+    return fatten_polys(polys, fatten)
+
+def arched(txt, radius, ch, fatten=0.3, heavy=True):
+    f = font(240, HEAVY if heavy else ("consolab.ttf", "arialbd.ttf")); adv = ImageDraw.Draw(Image.new("L", (4, 4))).textlength("M", font=f)
     bb = f.getbbox("M"); pitch = ch/(bb[3]-bb[1]); step = adv*pitch*1.16
     items = []
     for cc in txt:
@@ -104,7 +115,7 @@ def arched(txt, radius, ch):
         if gp:
             for p in gp: out.append(translate(rotate(p, math.degrees(phi), origin=(0, 0)), radius*math.sin(phi), -radius*math.cos(phi)))
         s += step
-    return out
+    return fatten_polys(out, fatten)
 
 def load_logo_polys(path):
     """Return shapely polys for a logo: use alpha if present, else key out white bg."""
