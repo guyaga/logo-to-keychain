@@ -154,13 +154,20 @@ def build_logo(style, LOGO, tagline, width):
         d["accent"] = [tri(11, 0, h*0.27)] + (text_polys(tagline, w=w*0.55, cy=-h*0.30) if tagline else [])
         d["logo"] = lb(w*0.72, h*0.30, cy=-h*0.02)
     elif style == "diecut":
-        s = fit(LOGO, target_w=width, cy=0); plate = unary_union(s).buffer(3.2, 1).buffer(-0.6)
+        s = fit(LOGO, target_w=width, cy=0)
+        plate = unary_union(s).buffer(3.8, join_style=1)           # clean uniform sticker border
         if isinstance(plate, MultiPolygon): plate = max(plate.geoms, key=lambda g: g.area)
-        d["base"] = [loop_top(plate, plate.bounds[3], ro=5.5, rh=2.8)]; d["logo"] = s
+        ext = np.asarray(plate.exterior.coords)                    # plate top near centre
+        near = np.abs(ext[:, 0]) < width*0.16
+        ty = ext[near, 1].max() if near.any() else ext[:, 1].max()
+        ro, rh = 5.5, 2.8; cyl = ty + ro + 1.5                     # ring sits clearly above the word
+        neck = box(-2.6, ty-2.0, 2.6, cyl)                         # small bridge connecting word -> ring
+        body = unary_union([plate, neck, Point(0, cyl).buffer(ro, 80)]).difference(Point(0, cyl).buffer(rh, 80))
+        d["base"] = [body]; d["logo"] = s
     elif style == "triangle":
         S = width; base = rtri(S); d["base"] = [loop_top(base, base.bounds[3])]
-        d["logo"] = lb(S*0.52, S*0.30, cy=S*0.05)
-        if tagline: d["accent"] = text_polys(tagline, w=S*0.40, cy=-S*0.20)
+        d["logo"] = lb(S*0.48, S*0.26, cy=-S*0.03)                 # sit in the wider lower-centre, clear of the slanted edges
+        if tagline: d["accent"] = text_polys(tagline, w=S*0.46, cy=-S*0.27)
     elif style == "squircle":
         w = width; base = rrect(w, w, w*0.28); d["base"] = [loop_top(base, w/2)]
         d["logo"] = lb(w*0.78, w*0.42, cy=w*0.04)
