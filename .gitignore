@@ -1,0 +1,12 @@
+# build outputs
+keychains/
+_test/
+*.stl
+*.3mf
+# but keep example previews
+!examples/*
+# python
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
